@@ -1,11 +1,13 @@
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import { jsPDF } from "jspdf";
+import html2canvas from "html2canvas";
 
 type QuizQuestion = {
   question: string;
   options: string[];
-  correctAnswer: string; // "A", "B", ...
+  correctAnswer: string;
 };
 
 export default function QuizPage() {
@@ -19,6 +21,7 @@ export default function QuizPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   useEffect(() => {
     if (!id || typeof id !== "string") return;
@@ -44,6 +47,38 @@ export default function QuizPage() {
     fetchQuiz();
   }, [id]);
 
+  useEffect(() => {
+    const { timer } = router.query;
+    if (!quiz.length || submitted) return;
+
+    if (typeof timer === "string" && timer !== "NONE") {
+      const minutes = parseInt(timer);
+      if (!isNaN(minutes) && minutes > 0) {
+        setTimeLeft(minutes * 60);
+      }
+    }
+  }, [quiz, router.query, submitted]);
+
+  useEffect(() => {
+    if (timeLeft === null || submitted) return;
+    if (timeLeft === 0) {
+      handleFinish();
+      return;
+    }
+    const interval = setInterval(() => {
+      setTimeLeft((prev) => (prev !== null ? prev - 1 : null));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [timeLeft, submitted]);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60)
+      .toString()
+      .padStart(2, "0");
+    const s = (seconds % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  };
+
   const handleChange = (value: string) => {
     const updated = [...answers];
     updated[currentIndex] = value;
@@ -63,33 +98,60 @@ export default function QuizPage() {
     const element = document.getElementById("quiz-result");
     if (!element) return;
 
-    const html2canvas = (await import("html2canvas")).default;
-    const jsPDF = (await import("jspdf")).default;
-
-    const canvas = await html2canvas(element);
+    const canvas = await html2canvas(element, { scale: 2, useCORS: true });
     const imgData = canvas.toDataURL("image/png");
 
-    const pdf = new jsPDF();
-    const imgProps = pdf.getImageProperties(imgData);
+    const pdf = new jsPDF("p", "mm", "a4");
     const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imgHeight = (canvas.height * pdfWidth) / canvas.width;
 
-    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-    pdf.save("quiz-risultati.pdf");
+    let position = 0;
+
+    if (imgHeight < pageHeight) {
+      pdf.addImage(imgData, "PNG", 0, position, pdfWidth, imgHeight);
+    } else {
+      let remainingHeight = imgHeight;
+      while (remainingHeight > 0) {
+        pdf.addImage(imgData, "PNG", 0, position, pdfWidth, imgHeight);
+        remainingHeight -= pageHeight;
+        if (remainingHeight > 0) {
+          pdf.addPage();
+          position = 0;
+        }
+      }
+    }
+
+    pdf.save("quiz-results.pdf");
   };
 
   const goTo = (i: number) => setCurrentIndex(i);
   const next = () => setCurrentIndex((prev) => Math.min(prev + 1, quiz.length - 1));
   const prev = () => setCurrentIndex((prev) => Math.max(prev - 1, 0));
 
-  if (loading) return <p className="p-8">Caricamento...</p>;
-  if (notFound) return <p className="p-8 text-red-600">Quiz non trovato.</p>;
+  if (loading) return <p className="p-8">Loading...</p>;
+  if (notFound) return <p className="p-8 text-red-600">Quiz not found.</p>;
 
   if (submitted) {
     return (
-      <div className="p-8 max-w-4xl mx-auto">
+      <div className="p-4 sm:p-6 max-w-4xl mx-auto bg-white text-gray-900">
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={handleDownloadPDF}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm sm:text-base"
+          >
+            Download PDF
+          </button>
+        </div>
+
         <div id="quiz-result">
-          <h2 className="text-2xl font-bold mb-6">Punteggio: {score} / {quiz.length}</h2>
+          <h2 className="text-xl sm:text-2xl font-bold mb-2">
+            You answered correctly {score} out of {quiz.length} questions
+          </h2>
+          <p className="text-gray-600 mb-6">
+            ✅ Correct: {score} — ❌ Incorrect: {quiz.length - score}
+          </p>
+
           {quiz.map((q, i) => {
             const userAns = answers[i];
             const correctLetter = q.correctAnswer;
@@ -97,15 +159,17 @@ export default function QuizPage() {
             const userText = q.options["ABCD".indexOf(userAns)] || "—";
             const isCorrect = userAns === correctLetter;
             return (
-              <div key={i} className="mb-4">
-                <p className="font-semibold">{i + 1}. {q.question}</p>
+              <div key={i} className="mb-4 border-b pb-4">
+                <p className="font-semibold mb-1">
+                  {i + 1}. {q.question}
+                </p>
                 <p>
-                  Risposta data: <strong>{userAns || "—"}) {userText}</strong> —{" "}
+                  Your answer: <strong>{userAns || "—"}) {userText}</strong> —{" "}
                   {isCorrect ? (
-                    <span className="text-green-600">corretto</span>
+                    <span className="text-green-600">correct</span>
                   ) : (
                     <span className="text-red-600">
-                      sbagliato (giusta: {correctLetter}) {correctText}
+                      incorrect (correct: {correctLetter}) {correctText}
                     </span>
                   )}
                 </p>
@@ -113,12 +177,6 @@ export default function QuizPage() {
             );
           })}
         </div>
-        <button
-          onClick={handleDownloadPDF}
-          className="mt-6 px-4 py-2 bg-blue-600 text-white rounded"
-        >
-          Scarica PDF
-        </button>
       </div>
     );
   }
@@ -127,93 +185,92 @@ export default function QuizPage() {
   const selected = answers[currentIndex];
 
   return (
-    <div className="flex min-h-screen bg-gray-50 text-gray-900">
-      {/* Sidebar domande */}
-      <aside className="w-64 border-r bg-white px-6 py-8 space-y-3">
-        <h2 className="text-lg font-semibold mb-4">Domande</h2>
-        <ul className="space-y-2">
-          {quiz.map((_, i) => (
-            <li key={i}>
-              <button
-                onClick={() => goTo(i)}
-                className={`block w-full text-left rounded px-4 py-2 text-sm border transition ${
-                  i === currentIndex
-                    ? "bg-blue-100 border-blue-500 font-semibold"
-                    : answers[i]
-                    ? "bg-green-50 border-green-300"
-                    : "bg-gray-50 border-gray-200"
-                }`}
-              >
-                Domanda {i + 1}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </aside>
+    <div className="flex flex-col min-h-screen bg-gray-50 text-gray-900">
+      {/* Top bar for navigation */}
+      <div className="overflow-x-auto border-b bg-white px-4 py-3 space-x-2 flex">
+        {quiz.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => goTo(i)}
+            className={`text-sm px-3 py-1 rounded border whitespace-nowrap ${
+              i === currentIndex
+                ? "bg-blue-100 border-blue-500 font-semibold"
+                : answers[i]
+                ? "bg-green-50 border-green-300"
+                : "bg-gray-50 border-gray-200"
+            }`}
+          >
+            {i + 1}
+          </button>
+        ))}
+      </div>
 
-      {/* Contenuto principale */}
-      <main className="flex-1 p-10">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-xl font-bold">
-            Domanda {currentIndex + 1} di {quiz.length}
+      {/* Main quiz content */}
+      <main className="flex-1 px-4 py-6 sm:px-6 lg:px-10">
+        {timeLeft !== null && (
+          <div className="flex justify-end mb-4">
+            <div className="inline-flex items-center gap-2 bg-blue-100 text-blue-800 px-4 py-2 rounded-full text-sm font-medium">
+              <span role="img" aria-label="timer">⏱</span>
+              <span>{formatTime(timeLeft)}</span>
+            </div>
+          </div>
+        )}
+
+        <div className="mb-8">
+          <h1 className="text-lg sm:text-xl font-bold mb-6">
+            Question {currentIndex + 1} of {quiz.length}
           </h1>
-          <button
-            onClick={handleDownloadPDF}
-            className="text-sm bg-gray-200 hover:bg-gray-300 px-4 py-2 rounded"
-          >
-            Stampa PDF
-          </button>
-        </div>
 
-        <h2 className="text-lg font-semibold mb-6">{current.question}</h2>
+          <h2 className="text-base sm:text-lg font-semibold mb-6">{current.question}</h2>
 
-        <div className="space-y-3 mb-10">
-          {current.options.map((opt, i) => {
-            const letter = "ABCD"[i];
-            return (
-              <label
-                key={letter}
-                className={`block border rounded-lg px-4 py-3 cursor-pointer transition ${
-                  selected === letter
-                    ? "bg-blue-100 border-blue-500"
-                    : "border-gray-300 hover:bg-gray-100"
-                }`}
-              >
-                <input
-                  type="radio"
-                  className="hidden"
-                  name={`q-${currentIndex}`}
-                  value={letter}
-                  checked={selected === letter}
-                  onChange={() => handleChange(letter)}
-                />
-                <span className="font-semibold mr-2">{letter})</span> {opt}
-              </label>
-            );
-          })}
-        </div>
+          <div className="space-y-3 mb-10">
+            {current.options.map((opt, i) => {
+              const letter = "ABCD"[i];
+              return (
+                <label
+                  key={letter}
+                  className={`block border rounded-lg px-4 py-3 cursor-pointer transition ${
+                    selected === letter
+                      ? "bg-blue-100 border-blue-500"
+                      : "border-gray-300 hover:bg-gray-100"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    className="hidden"
+                    name={`q-${currentIndex}`}
+                    value={letter}
+                    checked={selected === letter}
+                    onChange={() => handleChange(letter)}
+                  />
+                  <span className="font-semibold mr-2">{letter})</span> {opt}
+                </label>
+              );
+            })}
+          </div>
 
-        <div className="flex gap-4">
-          <button
-            onClick={prev}
-            className="bg-white border px-4 py-2 rounded text-sm disabled:opacity-50"
-            disabled={currentIndex === 0}
-          >
-            ← Indietro
-          </button>
-          <button
-            onClick={handleFinish}
-            className="bg-red-600 text-white px-4 py-2 rounded text-sm"
-          >
-            Termina quiz
-          </button>
-          <button
-            onClick={next}
-            className="bg-blue-600 text-white px-4 py-2 rounded text-sm disabled:opacity-50"
-            disabled={currentIndex === quiz.length - 1}
-          >
-            Avanti →
-          </button>
+          <div className="flex flex-wrap gap-4">
+            <button
+              onClick={prev}
+              className="bg-white border px-4 py-2 rounded text-sm disabled:opacity-50"
+              disabled={currentIndex === 0}
+            >
+              ← Back
+            </button>
+            <button
+              onClick={handleFinish}
+              className="bg-red-600 text-white px-4 py-2 rounded text-sm"
+            >
+              Finish Quiz
+            </button>
+            <button
+              onClick={next}
+              className="bg-blue-600 text-white px-4 py-2 rounded text-sm disabled:opacity-50"
+              disabled={currentIndex === quiz.length - 1}
+            >
+              Next →
+            </button>
+          </div>
         </div>
       </main>
     </div>

@@ -14,6 +14,8 @@ export default function UploadPage() {
   const [link, setLink] = useState("");
   const [quizUrl, setQuizUrl] = useState("");
   const [error, setError] = useState("");
+  const [noTimer, setNoTimer] = useState(true);
+  const [timerValue, setTimerValue] = useState("");
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -26,7 +28,7 @@ export default function UploadPage() {
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as string[][];
 
       if (rows.length < 2) {
-        setError("File vuoto o formattato male.");
+        setError("Empty or badly formatted file.");
         return;
       }
 
@@ -43,7 +45,7 @@ export default function UploadPage() {
       }
 
       if (quiz.length === 0) {
-        setError("Nessuna domanda valida trovata.");
+        setError("No valid questions found.");
         return;
       }
 
@@ -58,38 +60,80 @@ export default function UploadPage() {
 
       if (insertError) {
         console.error(insertError);
-        setError("Errore nel salvataggio su Supabase.");
+        setError("Failed to save quiz to Supabase.");
         return;
       }
 
-      const fullUrl = `${window.location.origin}/quiz/${id}`;
+      const baseUrl = `${window.location.origin}/quiz/${id}`;
+      const fullUrl = noTimer
+        ? `${baseUrl}?timer=NONE`
+        : `${baseUrl}?timer=${encodeURIComponent(timerValue.trim())}`;
+
       setLink(`/quiz/${id}`);
       setQuizUrl(fullUrl);
       setError("");
     } catch (err) {
       console.error(err);
-      setError("Errore nell'elaborazione del file.");
+      setError("Failed to process file.");
     }
   };
 
   return (
-    <div style={{ maxWidth: "600px", margin: "auto", padding: "2rem" }}>
-      <h1>Upload Quiz Excel</h1>
-      <input type="file" accept=".xlsx" onChange={handleFile} />
+    <div className="min-h-screen bg-gray-50 text-gray-900 flex items-center justify-center px-4 py-10">
+      <div className="bg-white shadow-lg rounded-lg p-10 w-full max-w-xl">
+        <h1 className="text-2xl font-bold mb-6">Upload Excel Quiz</h1>
 
-      {link && (
-        <div style={{ marginTop: "2rem" }}>
-          <p>
-            Link quiz generato:{" "}
-            <a href={quizUrl} target="_blank" rel="noopener noreferrer">
+        <div className="mb-6">
+          <label className="flex items-center space-x-2 text-sm font-medium mb-2">
+            <input
+              type="checkbox"
+              checked={noTimer}
+              onChange={() => setNoTimer(!noTimer)}
+            />
+            <span>No timer</span>
+          </label>
+
+          <input
+            type="number"
+            value={timerValue}
+            onChange={(e) => setTimerValue(e.target.value)}
+            disabled={noTimer}
+            placeholder="Time in minutes"
+            min="1"
+            className="block w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+          />
+        </div>
+
+        <input
+          type="file"
+          accept=".xlsx"
+          onChange={handleFile}
+          className="mb-4 block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:border-0 file:rounded file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+        />
+
+        {link && (
+          <div className="mt-8 text-center">
+            <p className="text-green-700 font-medium mb-2">
+              ✅ Quiz link generated:
+            </p>
+            <a
+              href={quizUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 underline break-all"
+            >
               {quizUrl}
             </a>
-          </p>
-          <QRCodeCanvas value={quizUrl} size={180} />
-        </div>
-      )}
+            <div className="mt-4 flex justify-center">
+              <QRCodeCanvas value={quizUrl} size={180} />
+            </div>
+          </div>
+        )}
 
-      {error && <p style={{ color: "red" }}>{error}</p>}
+        {error && (
+          <p className="mt-6 text-red-600 text-sm font-medium">{error}</p>
+        )}
+      </div>
     </div>
   );
 }
