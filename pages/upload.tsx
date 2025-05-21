@@ -11,11 +11,51 @@ type QuizQuestion = {
 };
 
 export default function UploadPage() {
+  const [authorized, setAuthorized] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+
   const [link, setLink] = useState("");
   const [quizUrl, setQuizUrl] = useState("");
   const [error, setError] = useState("");
   const [noTimer, setNoTimer] = useState(true);
   const [timerValue, setTimerValue] = useState("");
+
+  if (!authorized) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="bg-white p-8 rounded shadow max-w-sm w-full">
+          <h2 className="text-xl font-bold mb-4">Private Access</h2>
+          <input
+            type="text"
+            placeholder="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className="mb-2 w-full px-3 py-2 border border-gray-300 rounded"
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="mb-4 w-full px-3 py-2 border border-gray-300 rounded"
+          />
+          <button
+            onClick={() => {
+              if (username === "Filippo" && password === "Filippino1") {
+                setAuthorized(true);
+              } else {
+                alert("Invalid credentials");
+              }
+            }}
+            className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
+          >
+            Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
