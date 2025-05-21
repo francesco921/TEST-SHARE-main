@@ -2,7 +2,6 @@ import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { jsPDF } from "jspdf";
-import html2canvas from "html2canvas";
 
 type QuizQuestion = {
   question: string;
@@ -72,9 +71,7 @@ export default function QuizPage() {
   }, [timeLeft, submitted]);
 
   const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60)
-      .toString()
-      .padStart(2, "0");
+    const m = Math.floor(seconds / 60).toString().padStart(2, "0");
     const s = (seconds % 60).toString().padStart(2, "0");
     return `${m}:${s}`;
   };
@@ -94,33 +91,49 @@ export default function QuizPage() {
     setSubmitted(true);
   };
 
-  const handleDownloadPDF = async () => {
-    const element = document.getElementById("quiz-result");
-    if (!element) return;
-
-    const canvas = await html2canvas(element, { scale: 2, useCORS: true });
-    const imgData = canvas.toDataURL("image/png");
-
+  const handleDownloadPDF = () => {
     const pdf = new jsPDF("p", "mm", "a4");
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+    const margin = 15;
+    const lineHeight = 7;
+    const maxLineWidth = 180;
+    let y = 20;
 
-    let position = 0;
+    pdf.setFont("helvetica");
+    pdf.setFontSize(12);
 
-    if (imgHeight < pageHeight) {
-      pdf.addImage(imgData, "PNG", 0, position, pdfWidth, imgHeight);
-    } else {
-      let remainingHeight = imgHeight;
-      while (remainingHeight > 0) {
-        pdf.addImage(imgData, "PNG", 0, position, pdfWidth, imgHeight);
-        remainingHeight -= pageHeight;
-        if (remainingHeight > 0) {
-          pdf.addPage();
-          position = 0;
-        }
+    pdf.text("Quiz Results", margin, y);
+    y += lineHeight;
+    pdf.text(`Correct: ${score} / ${quiz.length}`, margin, y);
+    y += lineHeight * 2;
+
+    quiz.forEach((q, i) => {
+      const question = `${i + 1}. ${q.question}`;
+      const userAns = answers[i] || "—";
+      const correctLetter = q.correctAnswer;
+      const correctText = q.options["ABCD".indexOf(correctLetter)];
+      const userText = q.options["ABCD".indexOf(userAns)] || "—";
+      const isCorrect = userAns === correctLetter;
+
+      const resultLine = isCorrect
+        ? "Result: Correct"
+        : `Result: Wrong (correct: ${correctLetter}) ${correctText}`;
+
+      const lines = pdf.splitTextToSize(question, maxLineWidth);
+      if (y + lines.length * lineHeight > 280) {
+        pdf.addPage();
+        y = margin;
       }
-    }
+
+      pdf.setFont("helvetica", "bold");
+      pdf.text(lines, margin, y);
+      y += lines.length * lineHeight;
+
+      pdf.setFont("helvetica", "normal");
+      pdf.text(`Your answer: ${userAns}) ${userText}`, margin, y);
+      y += lineHeight;
+      pdf.text(resultLine, margin, y);
+      y += lineHeight * 1.5;
+    });
 
     pdf.save("quiz-results.pdf");
   };
@@ -131,6 +144,9 @@ export default function QuizPage() {
 
   if (loading) return <p className="p-8">Loading...</p>;
   if (notFound) return <p className="p-8 text-red-600">Quiz not found.</p>;
+
+  const current = quiz[currentIndex];
+  const selected = answers[currentIndex];
 
   if (submitted) {
     return (
@@ -149,7 +165,7 @@ export default function QuizPage() {
             You answered correctly {score} out of {quiz.length} questions
           </h2>
           <p className="text-gray-600 mb-6">
-            ✅ Correct: {score} — ❌ Incorrect: {quiz.length - score}
+            Correct: {score} — Wrong: {quiz.length - score}
           </p>
 
           {quiz.map((q, i) => {
@@ -169,7 +185,7 @@ export default function QuizPage() {
                     <span className="text-green-600">correct</span>
                   ) : (
                     <span className="text-red-600">
-                      incorrect (correct: {correctLetter}) {correctText}
+                      wrong (correct: {correctLetter}) {correctText}
                     </span>
                   )}
                 </p>
@@ -181,12 +197,8 @@ export default function QuizPage() {
     );
   }
 
-  const current = quiz[currentIndex];
-  const selected = answers[currentIndex];
-
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 text-gray-900">
-      {/* Top bar for navigation */}
       <div className="overflow-x-auto border-b bg-white px-4 py-3 space-x-2 flex">
         {quiz.map((_, i) => (
           <button
@@ -205,7 +217,6 @@ export default function QuizPage() {
         ))}
       </div>
 
-      {/* Main quiz content */}
       <main className="flex-1 px-4 py-6 sm:px-6 lg:px-10">
         {timeLeft !== null && (
           <div className="flex justify-end mb-4">
