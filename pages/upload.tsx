@@ -314,6 +314,16 @@ export default function UploadPage() {
             })}
           </div>
         </div>
+
+        {/* LINK QR PAGE */}
+        <div className="mt-10 text-center">
+          <a
+            href="/qr"
+            className="inline-block bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 text-sm"
+          >
+            View QR Codes for Static Slots
+          </a>
+        </div>
       </div>
     </div>
   );
