@@ -3,42 +3,39 @@ import Link from "next/link";
 import { supabase } from "../lib/supabase";
 
 export default function QuizzesPage() {
-  const [displaySlots, setDisplaySlots] = useState<string[] | null>(null);
+  const [visibleSlots, setVisibleSlots] = useState<string[]>([]);
+  const [activeSlots, setActiveSlots] = useState<string[]>([]);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
-      // 1. Recupera slot attivi da Supabase
-      const { data, error } = await supabase.from("quizzes").select("id");
-      if (error || !data) {
-        console.error("Supabase fetch error:", error);
-        setDisplaySlots([]);
-        return;
-      }
-
-      const active = data.map((q) => q.id).filter((id) => /^quiz(1[0-5]|[1-9])$/.test(id));
-
-      // 2. Recupera slot visibili da localStorage (solo lato client)
-      let visible: string[] = [];
+      // 1. Carica visibilità da localStorage (solo lato client)
       if (typeof window !== "undefined") {
         const stored = localStorage.getItem("visibleSlots");
         if (stored) {
           try {
-            visible = JSON.parse(stored);
+            setVisibleSlots(JSON.parse(stored));
           } catch {
-            visible = [];
+            setVisibleSlots([]);
           }
         }
       }
 
-      // 3. Intersezione tra attivi e visibili
-      const toShow = active.filter((id) => visible.includes(id));
-      setDisplaySlots(toShow);
+      // 2. Carica slot attivi da Supabase
+      const { data, error } = await supabase.from("quizzes").select("id");
+      if (!error && data) {
+        const ids = data.map((q) => q.id);
+        const valid = ids.filter((id) => /^quiz(1[0-5]|[1-9])$/.test(id));
+        setActiveSlots(valid);
+      }
+
+      setReady(true);
     };
 
     fetchData();
   }, []);
 
-  if (displaySlots === null) return null; // oppure uno spinner di caricamento
+  if (!ready) return null;
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 flex items-center justify-center px-4 py-10">
@@ -47,9 +44,12 @@ export default function QuizzesPage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           {[...Array(15)].map((_, i) => {
             const slot = `quiz${i + 1}`;
-            const enabled = displaySlots.includes(slot);
+            const isVisible = visibleSlots.includes(slot);
+            const isActive = activeSlots.includes(slot);
 
-            return enabled ? (
+            if (!isVisible) return null;
+
+            return isActive ? (
               <Link key={slot} href={`/quiz/${slot}`}>
                 <button className="w-full py-2 px-4 bg-blue-600 text-white rounded hover:bg-blue-700">
                   QUIZ {i + 1}
