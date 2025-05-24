@@ -227,21 +227,25 @@ export default function UploadPage() {
           <p className="font-semibold mb-2">Select visible slots for /quizzes page:</p>
           <div className="flex gap-2 mb-2">
             <button
-              onClick={() => setVisibleSlots([...Array(15)].map((_, i) => `quiz${i + 1}`))}
+              onClick={() => {
+                const all = [...Array(15)].map((_, i) => `quiz${i + 1}`);
+                const allSelected = all.every((slot) => visibleSlots.includes(slot));
+                const updated = allSelected ? [] : all;
+                setVisibleSlots(updated);
+              }}
               className="bg-gray-300 px-3 py-1 rounded hover:bg-gray-400 text-sm"
             >
               Select All
             </button>
             <button
-  onClick={() => {
-    localStorage.setItem("visibleSlots", JSON.stringify(visibleSlots));
-    alert("✅ Visibility settings applied.");
-  }}
-  className="bg-blue-600 px-3 py-1 rounded text-white hover:bg-blue-700 text-sm"
->
-  Apply
-</button>
-
+              onClick={() => {
+                localStorage.setItem("visibleSlots", JSON.stringify(visibleSlots));
+                alert("✅ Visibility settings applied.");
+              }}
+              className="bg-blue-600 px-3 py-1 rounded text-white hover:bg-blue-700 text-sm"
+            >
+              Apply
+            </button>
           </div>
           <div className="grid grid-cols-3 gap-2 text-sm">
             {[...Array(15)].map((_, i) => {
@@ -262,52 +266,54 @@ export default function UploadPage() {
 
         {/* DELETE MULTIPLO */}
         <div className="mb-6">
-  <p className="font-semibold mb-2">Delete selected slots from Supabase:</p>
-
-  <div className="flex gap-2 mb-2">
-    <button
-      onClick={() => setSelectedForDelete([...Array(15)].map((_, i) => `quiz${i + 1}`))}
-      className="bg-gray-300 px-3 py-1 rounded hover:bg-gray-400 text-sm"
-    >
-      Select All
-    </button>
-    <button
-      onClick={async () => {
-        for (const slot of selectedForDelete) {
-          await supabase.from("quizzes").delete().eq("id", slot);
-        }
-        alert(`✅ Deleted: ${selectedForDelete.join(", ")}`);
-        setSelectedForDelete([]);
-      }}
-      className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 text-sm"
-    >
-      Delete
-    </button>
-  </div>
-
-  <div className="grid grid-cols-3 gap-2 text-sm">
-    {[...Array(15)].map((_, i) => {
-      const slot = `quiz${i + 1}`;
-      return (
-        <label key={slot} className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={selectedForDelete.includes(slot)}
-            onChange={(e) =>
-              setSelectedForDelete((prev) =>
-                e.target.checked
-                  ? [...prev, slot]
-                  : prev.filter((s) => s !== slot)
-              )
-            }
-          />
-          <span>{slot.toUpperCase()}</span>
-        </label>
-      );
-    })}
-  </div>
-</div>
-
+          <p className="font-semibold mb-2">Delete selected slots from Supabase:</p>
+          <div className="flex gap-2 mb-2">
+            <button
+              onClick={() => {
+                const all = [...Array(15)].map((_, i) => `quiz${i + 1}`);
+                const allSelected = all.every((slot) => selectedForDelete.includes(slot));
+                const updated = allSelected ? [] : all;
+                setSelectedForDelete(updated);
+              }}
+              className="bg-gray-300 px-3 py-1 rounded hover:bg-gray-400 text-sm"
+            >
+              Select All
+            </button>
+            <button
+              onClick={async () => {
+                for (const slot of selectedForDelete) {
+                  await supabase.from("quizzes").delete().eq("id", slot);
+                }
+                alert(`✅ Deleted: ${selectedForDelete.join(", ")}`);
+                setSelectedForDelete([]);
+              }}
+              className="bg-red-600 text-white px-4 py-1 rounded hover:bg-red-700 text-sm"
+            >
+              Delete
+            </button>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-sm">
+            {[...Array(15)].map((_, i) => {
+              const slot = `quiz${i + 1}`;
+              return (
+                <label key={slot} className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedForDelete.includes(slot)}
+                    onChange={(e) =>
+                      setSelectedForDelete((prev) =>
+                        e.target.checked
+                          ? [...prev, slot]
+                          : prev.filter((s) => s !== slot)
+                      )
+                    }
+                  />
+                  <span>{slot.toUpperCase()}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -31,16 +31,16 @@ export default function HomePage() {
 
           <div className="flex flex-wrap justify-center gap-4">
             <a
-              href="https://www.hrascendpress.online/upload"
+              href="https://www.hrascendpress.online/quizzes"
               className="bg-blue-600 text-white font-semibold px-6 py-3 rounded-lg shadow hover:bg-blue-700 transition"
             >
-              Upload a Quiz
+              Start a Quiz
             </a>
             <a
-              href="https://www.hrascendpress.online/quizzes"
+              href="https://www.hrascendpress.online/upload"
               className="bg-white text-blue-600 border border-blue-600 font-semibold px-6 py-3 rounded-lg shadow hover:bg-blue-50 transition"
             >
-              Start a Quiz
+              Upload a Quiz
             </a>
           </div>
         </div>
