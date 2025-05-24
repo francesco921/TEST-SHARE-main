@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { v4 as uuidv4 } from "uuid";
 import { QRCodeCanvas } from "qrcode.react";
@@ -25,6 +25,21 @@ export default function UploadPage() {
 
   const [noTimer, setNoTimer] = useState(true);
   const [timerValue, setTimerValue] = useState("");
+
+  const [visibleSlots, setVisibleSlots] = useState<string[]>([]);
+  const [selectedForDelete, setSelectedForDelete] = useState<string[]>([]);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("visibleSlots");
+    if (stored) setVisibleSlots(JSON.parse(stored));
+  }, []);
+
+  const toggleSlotVisibility = (slot: string) => {
+    const updated = visibleSlots.includes(slot)
+      ? visibleSlots.filter((s) => s !== slot)
+      : [...visibleSlots, slot];
+    setVisibleSlots(updated);
+  };
 
   const handleLogin = () => {
     if (password.trim() === PASSWORD) {
@@ -85,7 +100,6 @@ export default function UploadPage() {
         return;
       }
 
-      // Timer only added to URL if dynamic link is used
       const urlBase = `${window.location.origin}/quiz/${id}`;
       const urlFinal =
         useDynamic && !noTimer
@@ -136,7 +150,7 @@ export default function UploadPage() {
               checked={useDynamic}
               onChange={() => {
                 setUseDynamic(!useDynamic);
-                setNoTimer(true); // Reset timer state if switching mode
+                setNoTimer(true);
               }}
             />
             <span>Use dynamic/random link</span>
@@ -204,6 +218,96 @@ export default function UploadPage() {
         )}
 
         {error && <p className="mt-6 text-red-600 text-sm font-medium">{error}</p>}
+
+        <hr className="my-8" />
+        <h2 className="text-xl font-bold mb-4">Manage Static Slots</h2>
+
+        {/* VISIBILI */}
+        <div className="mb-6">
+          <p className="font-semibold mb-2">Select visible slots for /quizzes page:</p>
+          <div className="flex gap-2 mb-2">
+            <button
+              onClick={() => setVisibleSlots([...Array(15)].map((_, i) => `quiz${i + 1}`))}
+              className="bg-gray-300 px-3 py-1 rounded hover:bg-gray-400 text-sm"
+            >
+              Select All
+            </button>
+            <button
+  onClick={() => {
+    localStorage.setItem("visibleSlots", JSON.stringify(visibleSlots));
+    alert("✅ Visibility settings applied.");
+  }}
+  className="bg-blue-600 px-3 py-1 rounded text-white hover:bg-blue-700 text-sm"
+>
+  Apply
+</button>
+
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-sm">
+            {[...Array(15)].map((_, i) => {
+              const slot = `quiz${i + 1}`;
+              return (
+                <label key={slot} className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={visibleSlots.includes(slot)}
+                    onChange={() => toggleSlotVisibility(slot)}
+                  />
+                  <span>{slot.toUpperCase()}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* DELETE MULTIPLO */}
+        <div className="mb-6">
+  <p className="font-semibold mb-2">Delete selected slots from Supabase:</p>
+
+  <div className="flex gap-2 mb-2">
+    <button
+      onClick={() => setSelectedForDelete([...Array(15)].map((_, i) => `quiz${i + 1}`))}
+      className="bg-gray-300 px-3 py-1 rounded hover:bg-gray-400 text-sm"
+    >
+      Select All
+    </button>
+    <button
+      onClick={async () => {
+        for (const slot of selectedForDelete) {
+          await supabase.from("quizzes").delete().eq("id", slot);
+        }
+        alert(`✅ Deleted: ${selectedForDelete.join(", ")}`);
+        setSelectedForDelete([]);
+      }}
+      className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 text-sm"
+    >
+      Delete
+    </button>
+  </div>
+
+  <div className="grid grid-cols-3 gap-2 text-sm">
+    {[...Array(15)].map((_, i) => {
+      const slot = `quiz${i + 1}`;
+      return (
+        <label key={slot} className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={selectedForDelete.includes(slot)}
+            onChange={(e) =>
+              setSelectedForDelete((prev) =>
+                e.target.checked
+                  ? [...prev, slot]
+                  : prev.filter((s) => s !== slot)
+              )
+            }
+          />
+          <span>{slot.toUpperCase()}</span>
+        </label>
+      );
+    })}
+  </div>
+</div>
+
       </div>
     </div>
   );
