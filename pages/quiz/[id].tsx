@@ -22,6 +22,16 @@ export default function QuizPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
+  // ✅ Protezione: redirect a /unlock se non hai token
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const token = localStorage.getItem("quizAccess");
+      if (token !== "true") {
+        window.location.href = "/unlock";
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (!id || typeof id !== "string") return;
     const fetchQuiz = async () => {
