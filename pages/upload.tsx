@@ -250,8 +250,8 @@ export default function UploadPage() {
                   });
                   const { error } = await supabase.from("quiz_visibility").upsert(inserts);
                   if (error) {
-                    console.error(error);
-                    alert("❌ Errore nel salvataggio su Supabase");
+                    console.error("Supabase upsert error:", error);
+                    alert("❌ Errore nel salvataggio su Supabase"+ error.message);
                   } else {
                     alert("✅ Visibilità salvata correttamente");
                   }
