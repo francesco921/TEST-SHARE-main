@@ -37,10 +37,10 @@ export default function HomePage() {
               Start a Quiz
             </a>
             <a
-              href="https://www.hrascendpress.online/upload"
+              href="https://whop.com/shrm/"
               className="bg-white text-blue-600 border border-blue-600 font-semibold px-6 py-3 rounded-lg shadow hover:bg-blue-50 transition"
             >
-              Upload a Quiz
+              Community Support
             </a>
           </div>
         </div>

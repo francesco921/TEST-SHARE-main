@@ -9,27 +9,38 @@ export default function QuizzesPage() {
 
   useEffect(() => {
     const fetchData = async () => {
-      // 1. Carica visibilità da localStorage (solo lato client)
-      if (typeof window !== "undefined") {
-        const stored = localStorage.getItem("visibleSlots");
-        if (stored) {
-          try {
-            setVisibleSlots(JSON.parse(stored));
-          } catch {
-            setVisibleSlots([]);
-          }
+      try {
+        // 1. Carica visibilità da Supabase
+        const { data: visibilityData, error: visibilityError } = await supabase
+          .from("quiz_visibility")
+          .select("slot_id, is_visible");
+
+        if (visibilityError) {
+          console.error("Errore visibilità:", visibilityError);
+        } else {
+          const visible = visibilityData
+            .filter((v) => v.is_visible)
+            .map((v) => v.slot_id);
+          setVisibleSlots(visible);
         }
-      }
 
-      // 2. Carica slot attivi da Supabase
-      const { data, error } = await supabase.from("quizzes").select("id");
-      if (!error && data) {
-        const ids = data.map((q) => q.id);
-        const valid = ids.filter((id) => /^quiz(1[0-5]|[1-9])$/.test(id));
-        setActiveSlots(valid);
-      }
+        // 2. Carica quiz esistenti da Supabase
+        const { data: quizData, error: quizError } = await supabase
+          .from("quizzes")
+          .select("id");
 
-      setReady(true);
+        if (quizError) {
+          console.error("Errore caricamento quiz:", quizError);
+        } else {
+          const ids = quizData.map((q) => q.id);
+          const valid = ids.filter((id) => /^quiz(1[0-5]|[1-9])$/.test(id));
+          setActiveSlots(valid);
+        }
+
+        setReady(true);
+      } catch (e) {
+        console.error("Errore generale:", e);
+      }
     };
 
     fetchData();

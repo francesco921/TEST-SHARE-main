@@ -30,8 +30,14 @@ export default function UploadPage() {
   const [selectedForDelete, setSelectedForDelete] = useState<string[]>([]);
 
   useEffect(() => {
-    const stored = localStorage.getItem("visibleSlots");
-    if (stored) setVisibleSlots(JSON.parse(stored));
+    const fetchVisibility = async () => {
+      const { data, error } = await supabase.from("quiz_visibility").select("*");
+      if (!error && data) {
+        const visible = data.filter((row) => row.is_visible).map((row) => row.slot_id);
+        setVisibleSlots(visible);
+      }
+    };
+    fetchVisibility();
   }, []);
 
   const toggleSlotVisibility = (slot: string) => {
@@ -87,13 +93,7 @@ export default function UploadPage() {
         await supabase.from("quizzes").delete().eq("id", id);
       }
 
-      const { error: insertError } = await supabase.from("quizzes").insert([
-        {
-          id,
-          data: quiz,
-        },
-      ]);
-
+      const { error: insertError } = await supabase.from("quizzes").insert([{ id, data: quiz }]);
       if (insertError) {
         console.error(insertError);
         setError("Failed to save quiz to Supabase.");
@@ -238,9 +238,27 @@ export default function UploadPage() {
               Select All
             </button>
             <button
-              onClick={() => {
-                localStorage.setItem("visibleSlots", JSON.stringify(visibleSlots));
-                alert("✅ Visibility settings applied.");
+              onClick={async () => {
+                try {
+                  await supabase.from("quiz_visibility").delete().neq("slot_id", "");
+                  const inserts = [...Array(15)].map((_, i) => {
+                    const slot = `quiz${i + 1}`;
+                    return {
+                      slot_id: slot,
+                      is_visible: visibleSlots.includes(slot),
+                    };
+                  });
+                  const { error } = await supabase.from("quiz_visibility").upsert(inserts);
+                  if (error) {
+                    console.error(error);
+                    alert("❌ Errore nel salvataggio su Supabase");
+                  } else {
+                    alert("✅ Visibilità salvata correttamente");
+                  }
+                } catch (e) {
+                  console.error(e);
+                  alert("❌ Errore imprevisto");
+                }
               }}
               className="bg-blue-600 px-3 py-1 rounded text-white hover:bg-blue-700 text-sm"
             >
