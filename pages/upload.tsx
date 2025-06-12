@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
-import { v4 as uuidv4 } from "uuid";
 import { QRCodeCanvas } from "qrcode.react";
 import { supabase } from "../lib/supabase";
 
@@ -16,48 +15,63 @@ export default function UploadPage() {
   const [access, setAccess] = useState(false);
   const [password, setPassword] = useState("");
 
-  const [link, setLink] = useState("");
+  const [projects, setProjects] = useState<{ id: number; name: string; domain: string }[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [newDomain, setNewDomain] = useState("");
+
+  const [selectedSlot, setSelectedSlot] = useState("quiz1");
+  const [timerValue, setTimerValue] = useState("");
   const [quizUrl, setQuizUrl] = useState("");
   const [error, setError] = useState("");
-
-  const [useDynamic, setUseDynamic] = useState(true);
-  const [selectedSlot, setSelectedSlot] = useState("quiz1");
-
-  const [noTimer, setNoTimer] = useState(true);
-  const [timerValue, setTimerValue] = useState("");
 
   const [visibleSlots, setVisibleSlots] = useState<string[]>([]);
   const [selectedForDelete, setSelectedForDelete] = useState<string[]>([]);
 
   useEffect(() => {
+    const fetchProjects = async () => {
+      const { data } = await supabase.from("projects").select("id, name, domain");
+      if (data) setProjects(data);
+    };
+    fetchProjects();
+  }, []);
+
+  useEffect(() => {
     const fetchVisibility = async () => {
-      const { data, error } = await supabase.from("quiz_visibility").select("*");
-      if (!error && data) {
-        const visible = data.filter((row) => row.is_visible).map((row) => row.slot_id);
+      if (!selectedProjectId) return;
+      const { data } = await supabase
+        .from("quiz_visibility")
+        .select("slot_id, is_visible")
+        .eq("project_id", selectedProjectId);
+      if (data) {
+        const visible = data.filter((r) => r.is_visible).map((r) => r.slot_id);
         setVisibleSlots(visible);
       }
     };
     fetchVisibility();
-  }, []);
-
-  const toggleSlotVisibility = (slot: string) => {
-    const updated = visibleSlots.includes(slot)
-      ? visibleSlots.filter((s) => s !== slot)
-      : [...visibleSlots, slot];
-    setVisibleSlots(updated);
-  };
+  }, [selectedProjectId]);
 
   const handleLogin = () => {
-    if (password.trim() === PASSWORD) {
-      setAccess(true);
-    } else {
-      alert("Incorrect password");
+    if (password.trim() === PASSWORD) setAccess(true);
+    else alert("Incorrect password");
+  };
+
+  const handleAddProject = async () => {
+    if (!newDomain.trim()) return;
+    const { data, error } = await supabase
+      .from("projects")
+      .insert({ domain: newDomain.trim(), name: newDomain.trim() })
+      .select()
+      .single();
+    if (data && !error) {
+      setProjects((prev) => [...prev, data]);
+      setSelectedProjectId(data.id);
+      setNewDomain("");
     }
   };
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !selectedProjectId) return;
 
     try {
       const data = await file.arrayBuffer();
@@ -82,37 +96,50 @@ export default function UploadPage() {
         });
       }
 
-      if (quiz.length === 0) {
-        setError("No valid questions found.");
-        return;
-      }
+      await supabase.from("quizzes").delete().eq("slug", selectedSlot).eq("project_id", selectedProjectId);
+      const { error: insertError } = await supabase.from("quizzes").insert({
+        slug: selectedSlot,
+        project_id: selectedProjectId,
+        data: quiz,
+      });
 
-      const id = useDynamic ? uuidv4().slice(0, 6) : selectedSlot;
-
-      if (!useDynamic) {
-        await supabase.from("quizzes").delete().eq("id", id);
-      }
-
-      const { error: insertError } = await supabase.from("quizzes").insert([{ id, data: quiz }]);
       if (insertError) {
-        console.error(insertError);
-        setError("Failed to save quiz to Supabase.");
+        setError("Failed to save quiz.");
         return;
       }
 
-      const urlBase = `${window.location.origin}/quiz/${id}`;
-      const urlFinal =
-        useDynamic && !noTimer
-          ? `${urlBase}?timer=${encodeURIComponent(timerValue.trim())}`
-          : urlBase;
-
-      setLink(`/quiz/${id}`);
-      setQuizUrl(urlFinal);
+      const selectedProject = projects.find((p) => p.id === selectedProjectId);
+      const url = `${window.location.origin}/quiz/${selectedSlot}?domain=${selectedProject?.domain}`;
+      setQuizUrl(url);
       setError("");
     } catch (err) {
       console.error(err);
       setError("Failed to process file.");
     }
+  };
+
+  const handleApplyVisibility = async () => {
+    if (!selectedProjectId) return;
+    await supabase.from("quiz_visibility").delete().eq("project_id", selectedProjectId);
+    const inserts = [...Array(15)].map((_, i) => {
+      const slot = `quiz${i + 1}`;
+      return {
+        slot_id: slot,
+        is_visible: visibleSlots.includes(slot),
+        project_id: selectedProjectId,
+      };
+    });
+    await supabase.from("quiz_visibility").upsert(inserts);
+    alert("✅ Visibility updated");
+  };
+
+  const handleDeleteSlots = async () => {
+    if (!selectedProjectId) return;
+    for (const slot of selectedForDelete) {
+      await supabase.from("quizzes").delete().eq("slug", slot).eq("project_id", selectedProjectId);
+    }
+    alert(`✅ Deleted: ${selectedForDelete.join(", ")}`);
+    setSelectedForDelete([]);
   };
 
   if (!access) {
@@ -139,209 +166,133 @@ export default function UploadPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 flex items-center justify-center px-4 py-10">
-      <div className="bg-white shadow-lg rounded-lg p-10 w-full max-w-xl">
+    <div className="min-h-screen bg-gray-50 text-gray-900 flex flex-col items-center justify-start px-4 py-10">
+      <div className="bg-white shadow-lg rounded-lg p-10 w-full max-w-2xl">
         <h1 className="text-2xl font-bold mb-6">Upload Excel Quiz</h1>
 
         <div className="mb-6">
-          <label className="flex items-center mb-2 text-sm space-x-2">
-            <input
-              type="checkbox"
-              checked={useDynamic}
-              onChange={() => {
-                setUseDynamic(!useDynamic);
-                setNoTimer(true);
-              }}
-            />
-            <span>Use dynamic/random link</span>
-          </label>
-
+          <label className="block text-sm font-medium mb-1">Select or Add Domain</label>
           <select
-            disabled={useDynamic}
-            value={selectedSlot}
-            onChange={(e) => setSelectedSlot(e.target.value)}
-            className="block w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+            value={selectedProjectId ?? ''}
+            onChange={(e) => setSelectedProjectId(Number(e.target.value))}
+            className="w-full px-4 py-2 border border-gray-300 rounded mb-2"
           >
-            {[...Array(15)].map((_, i) => (
-              <option key={i} value={`quiz${i + 1}`}>
-                QUIZ {i + 1}
-              </option>
+            <option value="" disabled>Select a project</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.domain}</option>
             ))}
           </select>
+          <div className="flex space-x-2">
+            <input
+              value={newDomain}
+              onChange={(e) => setNewDomain(e.target.value)}
+              placeholder="Add new domain"
+              className="flex-1 px-4 py-2 border border-gray-300 rounded"
+            />
+            <button
+              onClick={handleAddProject}
+              className="bg-green-600 text-white px-4 py-2 rounded"
+            >Add</button>
+          </div>
         </div>
 
-        {useDynamic && (
-          <div className="mb-6">
-            <label className="flex items-center space-x-2 text-sm font-medium">
+        {selectedProjectId && (
+          <>
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1">Select Static Slot</label>
+              <select
+                value={selectedSlot}
+                onChange={(e) => setSelectedSlot(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded"
+              >
+                {[...Array(15)].map((_, i) => (
+                  <option key={i} value={`quiz${i + 1}`}>QUIZ {i + 1}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1">Time (minutes, optional)</label>
               <input
-                type="checkbox"
-                checked={noTimer}
-                onChange={() => setNoTimer(!noTimer)}
+                type="number"
+                value={timerValue}
+                onChange={(e) => setTimerValue(e.target.value)}
+                min="1"
+                className="w-full px-4 py-2 border border-gray-300 rounded"
               />
-              <span>No timer</span>
-            </label>
+            </div>
 
             <input
-              type="number"
-              value={timerValue}
-              onChange={(e) => setTimerValue(e.target.value)}
-              disabled={noTimer}
-              placeholder="Time in minutes"
-              min="1"
-              className="mt-2 block w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+              type="file"
+              accept=".xlsx"
+              onChange={handleFile}
+              className="mb-6 block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:border-0 file:rounded file:bg-blue-600 file:text-white hover:file:bg-blue-700"
             />
-          </div>
-        )}
 
-        <input
-          type="file"
-          accept=".xlsx"
-          onChange={handleFile}
-          className="mb-4 block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:border-0 file:rounded file:bg-blue-600 file:text-white hover:file:bg-blue-700"
-        />
+            {quizUrl && (
+              <div className="mb-6 text-center">
+                <p className="text-green-700 font-medium mb-2">✅ Quiz link generated:</p>
+                <a href={quizUrl} target="_blank" className="text-blue-600 underline break-all">{quizUrl}</a>
+                <div className="mt-4 flex justify-center">
+                  <QRCodeCanvas value={quizUrl} size={180} />
+                </div>
+              </div>
+            )}
 
-        {link && (
-          <div className="mt-8 text-center">
-            <p className="text-green-700 font-medium mb-2">✅ Quiz link generated:</p>
-            <a
-              href={quizUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-600 underline break-all"
-            >
-              {quizUrl}
-            </a>
-            <div className="mt-4 flex justify-center">
-              <QRCodeCanvas value={quizUrl} size={180} />
+            <hr className="my-6" />
+
+            <h2 className="text-xl font-bold mb-4">Manage Static Slots</h2>
+            <div className="mb-6">
+              <p className="font-semibold mb-2">Select visible slots for /quizzes page:</p>
+              <button onClick={() => setVisibleSlots([...Array(15)].map((_, i) => `quiz${i + 1}`))} className="bg-gray-300 px-3 py-1 rounded mr-2">Select All</button>
+              <button onClick={handleApplyVisibility} className="bg-blue-600 text-white px-3 py-1 rounded">Apply</button>
+              <div className="grid grid-cols-3 gap-2 mt-2 text-sm">
+                {[...Array(15)].map((_, i) => {
+                  const slot = `quiz${i + 1}`;
+                  return (
+                    <label key={slot} className="flex items-center space-x-2">
+                      <input type="checkbox" checked={visibleSlots.includes(slot)} onChange={() => toggleSlotVisibility(slot)} />
+                      <span>{slot.toUpperCase()}</span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+
+            <div className="mb-6">
+              <p className="font-semibold mb-2">Delete selected slots from Supabase:</p>
+              <button onClick={() => setSelectedForDelete([...Array(15)].map((_, i) => `quiz${i + 1}`))} className="bg-gray-300 px-3 py-1 rounded mr-2">Select All</button>
+              <button onClick={handleDeleteSlots} className="bg-red-600 text-white px-4 py-1 rounded">Delete</button>
+              <div className="grid grid-cols-3 gap-2 mt-2 text-sm">
+                {[...Array(15)].map((_, i) => {
+                  const slot = `quiz${i + 1}`;
+                  return (
+                    <label key={slot} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedForDelete.includes(slot)}
+                        onChange={(e) =>
+                          setSelectedForDelete((prev) =>
+                            e.target.checked ? [...prev, slot] : prev.filter((s) => s !== slot)
+                          )
+                        }
+                      />
+                      <span>{slot.toUpperCase()}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="text-center">
+              <a href="/qr" className="inline-block bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 text-sm">
+                View QR Codes for Static Slots
+              </a>
+            </div>
+          </>
         )}
 
         {error && <p className="mt-6 text-red-600 text-sm font-medium">{error}</p>}
-
-        <hr className="my-8" />
-        <h2 className="text-xl font-bold mb-4">Manage Static Slots</h2>
-
-        {/* VISIBILI */}
-        <div className="mb-6">
-          <p className="font-semibold mb-2">Select visible slots for /quizzes page:</p>
-          <div className="flex gap-2 mb-2">
-            <button
-              onClick={() => {
-                const all = [...Array(15)].map((_, i) => `quiz${i + 1}`);
-                const allSelected = all.every((slot) => visibleSlots.includes(slot));
-                const updated = allSelected ? [] : all;
-                setVisibleSlots(updated);
-              }}
-              className="bg-gray-300 px-3 py-1 rounded hover:bg-gray-400 text-sm"
-            >
-              Select All
-            </button>
-            <button
-              onClick={async () => {
-                try {
-                  await supabase.from("quiz_visibility").delete().neq("slot_id", "");
-                  const inserts = [...Array(15)].map((_, i) => {
-                    const slot = `quiz${i + 1}`;
-                    return {
-                      slot_id: slot,
-                      is_visible: visibleSlots.includes(slot),
-                    };
-                  });
-                  const { error } = await supabase.from("quiz_visibility").upsert(inserts);
-                  if (error) {
-                    console.error("Supabase upsert error:", error);
-                    alert("❌ Errore nel salvataggio su Supabase"+ error.message);
-                  } else {
-                    alert("✅ Visibilità salvata correttamente");
-                  }
-                } catch (e) {
-                  console.error(e);
-                  alert("❌ Errore imprevisto");
-                }
-              }}
-              className="bg-blue-600 px-3 py-1 rounded text-white hover:bg-blue-700 text-sm"
-            >
-              Apply
-            </button>
-          </div>
-          <div className="grid grid-cols-3 gap-2 text-sm">
-            {[...Array(15)].map((_, i) => {
-              const slot = `quiz${i + 1}`;
-              return (
-                <label key={slot} className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={visibleSlots.includes(slot)}
-                    onChange={() => toggleSlotVisibility(slot)}
-                  />
-                  <span>{slot.toUpperCase()}</span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* DELETE MULTIPLO */}
-        <div className="mb-6">
-          <p className="font-semibold mb-2">Delete selected slots from Supabase:</p>
-          <div className="flex gap-2 mb-2">
-            <button
-              onClick={() => {
-                const all = [...Array(15)].map((_, i) => `quiz${i + 1}`);
-                const allSelected = all.every((slot) => selectedForDelete.includes(slot));
-                const updated = allSelected ? [] : all;
-                setSelectedForDelete(updated);
-              }}
-              className="bg-gray-300 px-3 py-1 rounded hover:bg-gray-400 text-sm"
-            >
-              Select All
-            </button>
-            <button
-              onClick={async () => {
-                for (const slot of selectedForDelete) {
-                  await supabase.from("quizzes").delete().eq("id", slot);
-                }
-                alert(`✅ Deleted: ${selectedForDelete.join(", ")}`);
-                setSelectedForDelete([]);
-              }}
-              className="bg-red-600 text-white px-4 py-1 rounded hover:bg-red-700 text-sm"
-            >
-              Delete
-            </button>
-          </div>
-          <div className="grid grid-cols-3 gap-2 text-sm">
-            {[...Array(15)].map((_, i) => {
-              const slot = `quiz${i + 1}`;
-              return (
-                <label key={slot} className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={selectedForDelete.includes(slot)}
-                    onChange={(e) =>
-                      setSelectedForDelete((prev) =>
-                        e.target.checked
-                          ? [...prev, slot]
-                          : prev.filter((s) => s !== slot)
-                      )
-                    }
-                  />
-                  <span>{slot.toUpperCase()}</span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* LINK QR PAGE */}
-        <div className="mt-10 text-center">
-          <a
-            href="/qr"
-            className="inline-block bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 text-sm"
-          >
-            View QR Codes for Static Slots
-          </a>
-        </div>
       </div>
     </div>
   );

@@ -11,7 +11,7 @@ type QuizQuestion = {
 
 export default function QuizPage() {
   const router = useRouter();
-  const { id } = router.query;
+  const { id, domain, timer } = router.query;
 
   const [quiz, setQuiz] = useState<QuizQuestion[]>([]);
   const [answers, setAnswers] = useState<string[]>([]);
@@ -22,7 +22,6 @@ export default function QuizPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
-  // ✅ Protezione: redirect a /unlock se non hai token
   useEffect(() => {
     if (typeof window !== "undefined") {
       const token = localStorage.getItem("quizAccess");
@@ -33,40 +32,55 @@ export default function QuizPage() {
   }, []);
 
   useEffect(() => {
-    if (!id || typeof id !== "string") return;
     const fetchQuiz = async () => {
-      const { data, error } = await supabase
-        .from("quizzes")
-        .select("data")
-        .eq("id", id)
+      if (!id || typeof id !== "string" || !domain || typeof domain !== "string") return;
+
+      const { data: project, error: projectError } = await supabase
+        .from("projects")
+        .select("id")
+        .eq("domain", domain)
         .single();
 
-      if (error || !data) {
+      if (projectError || !project) {
+        console.error("Project not found:", projectError);
         setNotFound(true);
         setLoading(false);
         return;
       }
 
-      const parsed = data.data as QuizQuestion[];
+      const { data: quizData, error: quizError } = await supabase
+        .from("quizzes")
+        .select("data")
+        .eq("project_id", project.id)
+        .eq("slug", id)
+        .single();
+
+      if (quizError || !quizData) {
+        console.error("Quiz not found:", quizError);
+        setNotFound(true);
+        setLoading(false);
+        return;
+      }
+
+      const parsed = quizData.data as QuizQuestion[];
       setQuiz(parsed);
       setAnswers(Array(parsed.length).fill(""));
       setLoading(false);
     };
 
     fetchQuiz();
-  }, [id]);
+  }, [id, domain]);
 
   useEffect(() => {
-    const { timer } = router.query;
-    if (!quiz.length || submitted) return;
+    if (!quiz.length || submitted || typeof timer !== "string") return;
 
-    if (typeof timer === "string" && timer !== "NONE") {
+    if (timer !== "NONE") {
       const minutes = parseInt(timer);
       if (!isNaN(minutes) && minutes > 0) {
         setTimeLeft(minutes * 60);
       }
     }
-  }, [quiz, router.query, submitted]);
+  }, [quiz, timer, submitted]);
 
   useEffect(() => {
     if (timeLeft === null || submitted) return;
@@ -110,7 +124,6 @@ export default function QuizPage() {
 
     pdf.setFont("helvetica");
     pdf.setFontSize(12);
-
     pdf.text("Quiz Results", margin, y);
     y += lineHeight;
     pdf.text(`Correct: ${score} / ${quiz.length}`, margin, y);
@@ -123,12 +136,11 @@ export default function QuizPage() {
       const correctText = q.options["ABCD".indexOf(correctLetter)];
       const userText = q.options["ABCD".indexOf(userAns)] || "—";
       const isCorrect = userAns === correctLetter;
-
       const resultLine = isCorrect
         ? "Result: Correct"
         : `Result: Wrong (correct: ${correctLetter}) ${correctText}`;
-
       const lines = pdf.splitTextToSize(question, maxLineWidth);
+
       if (y + lines.length * lineHeight > 280) {
         pdf.addPage();
         y = margin;
@@ -169,7 +181,6 @@ export default function QuizPage() {
             Download PDF
           </button>
         </div>
-
         <div id="quiz-result">
           <h2 className="text-xl sm:text-2xl font-bold mb-2">
             You answered correctly {score} out of {quiz.length} questions
@@ -177,7 +188,6 @@ export default function QuizPage() {
           <p className="text-gray-600 mb-6">
             Correct: {score} — Wrong: {quiz.length - score}
           </p>
-
           {quiz.map((q, i) => {
             const userAns = answers[i];
             const correctLetter = q.correctAnswer;
@@ -186,9 +196,7 @@ export default function QuizPage() {
             const isCorrect = userAns === correctLetter;
             return (
               <div key={i} className="mb-4 border-b pb-4">
-                <p className="font-semibold mb-1">
-                  {i + 1}. {q.question}
-                </p>
+                <p className="font-semibold mb-1">{i + 1}. {q.question}</p>
                 <p>
                   Your answer: <strong>{userAns || "—"}) {userText}</strong> —{" "}
                   {isCorrect ? (
@@ -231,8 +239,7 @@ export default function QuizPage() {
         {timeLeft !== null && (
           <div className="flex justify-end mb-4">
             <div className="inline-flex items-center gap-2 bg-blue-100 text-blue-800 px-4 py-2 rounded-full text-sm font-medium">
-              <span role="img" aria-label="timer">⏱</span>
-              <span>{formatTime(timeLeft)}</span>
+              ⏱ <span>{formatTime(timeLeft)}</span>
             </div>
           </div>
         )}
